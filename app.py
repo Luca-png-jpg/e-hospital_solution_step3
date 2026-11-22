@@ -1,0 +1,71 @@
+from flask import Flask
+from flask_cors import CORS
+from src.virtualization.digital_replica.schema_registry import SchemaRegistry
+from src.services.database_service import DatabaseService
+from src.digital_twin.dt_factory import DTFactory
+from src.application.api import register_api_blueprints
+from src.application.e_hospital_api import register_e_hospital_blueprint
+from config.config_loader import ConfigLoader
+from src.application.mqtt_handler import HospitalMQTTHandler
+
+
+class FlaskServer:
+    def __init__(self):
+        self.app = Flask(__name__)
+        CORS(self.app)
+        self._init_components()
+        self._register_blueprints()
+
+        # Initialize MQTT configuration and handler
+        self.app.config["MQTT_CONFIG"] = {
+            "broker": "broker.hivemq.com",
+            "port": 1883,
+        }
+        self.mqtt_handler = HospitalMQTTHandler(self.app)
+
+    def _init_components(self):
+        """Initialize all required components and store them in app config"""
+        schema_registry = SchemaRegistry()
+        schema_registry.load_schema("patient", "src/virtualization/templates/patient.yaml")
+        schema_registry.load_schema("doctor", "src/virtualization/templates/doctor.yaml")
+        schema_registry.load_schema("room", "src/virtualization/templates/room.yaml")
+
+        # Load database configuration
+        db_config = ConfigLoader.load_database_config()
+        connection_string = ConfigLoader.build_connection_string(db_config)
+
+        # Initialize DatabaseService with populated schema_registry
+        db_service = DatabaseService(
+            connection_string=connection_string,
+            db_name=db_config["settings"]["name"],
+            schema_registry=schema_registry,
+        )
+        db_service.connect()
+
+        # Initialize DTFactory
+        dt_factory = DTFactory(db_service, schema_registry)
+
+        # Store references
+        self.app.config["SCHEMA_REGISTRY"] = schema_registry
+        self.app.config["DB_SERVICE"] = db_service
+        self.app.config["DT_FACTORY"] = dt_factory
+
+    def _register_blueprints(self):
+        """Register all API blueprints"""
+        register_api_blueprints(self.app)
+        register_e_hospital_blueprint(self.app)
+
+    def run(self, host="0.0.0.0", port=5000, debug=True):
+        """Run the Flask server"""
+        try:
+            self.mqtt_handler.start()
+            self.app.run(host=host, port=port, debug=debug, use_reloader=False)
+        finally:
+            if "DB_SERVICE" in self.app.config:
+                self.app.config["DB_SERVICE"].disconnect()
+            self.mqtt_handler.stop()
+
+
+if __name__ == "__main__":
+    server = FlaskServer()
+    server.run()

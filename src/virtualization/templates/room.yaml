@@ -1,0 +1,65 @@
+schemas:
+
+  common_fields:
+    _id: str
+    type: str
+
+    profile:
+      room_number: str
+      floor: int
+      wing: str
+      room_type: str
+      capacity: int
+      
+    metadata:
+      created_at: datetime
+      updated_at: datetime
+      status: str
+
+  entity:
+    data:
+      current_patients: List[str]
+      devices: List[Dict]
+      measurements: List[Dict]
+      access_logs: List[Dict]
+
+  validations:
+
+    mandatory_fields:
+      root:
+        - _id
+        - type
+      profile:
+        - room_number
+        - floor
+        - room_type
+        - capacity
+      metadata:
+        - created_at
+        - updated_at
+        - status
+
+    type_constraints:
+      floor:
+        type: int
+        min: 0
+        max: 20
+      room_type:
+        type: str
+        enum: ["standard", "intensive_care", "emergency", "surgery", "isolation"]
+      capacity:
+        type: int
+        min: 1
+        max: 6
+      metadata.status:
+        type: str
+        enum: ["available", "occupied", "maintenance", "cleaning"]
+
+    initialization:
+      metadata:
+        status: "available"
+      data:
+        current_patients: []
+        devices: []
+        measurements: []
+        access_logs: []
